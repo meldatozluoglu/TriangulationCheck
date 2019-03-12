@@ -1,7 +1,7 @@
 makefile is available under Debug folder, this is not a release product.
 
 The format to call the function is:
-$pathToProject/TriangulatoinCheck/Debug/TriangulationCheck -inputMeshFile $pathToProject/TriangulatoinCheck/testCases/testInputMesh04 -outputDirectory $pathToProject/TriangulatoinCheck/
+$pathToProject/TriangulatoinCheck/Debug/TriangulationCheck -inputMeshFile $pathToProject/TriangulatoinCheck/testCases/testInputMesh01 -outputDirectory $pathToProject/TriangulatoinCheck/
 
 
 
