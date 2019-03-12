@@ -243,7 +243,7 @@ bool	mesh::readExecutableInputs(int argc, char * argv[]){
 		}
 	}
 	if (!inputFileSpecified){
-		std::cerr<<"Please enter the input mesh, a test cases can be found under /TriangulationCheck/testCases/ "<<std::endl;
+		std::cout<<"Please enter the input mesh, a test cases can be found under /TriangulationCheck/testCases/ "<<std::endl;
 		std::cout<<"   format is: -inputMeshFile $pathToProject/TriangulationCheck/testCases/testInputMesh01"<<std::endl;
 		return true;//there is error in executable input
 	}
