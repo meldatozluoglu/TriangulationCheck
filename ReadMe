@@ -1,13 +1,19 @@
 makefile is available under Debug folder, this is not a release product.
 
-the formata to call the function is:
+The format to call the function is:
+$pathToProject/TriangulatoinCheck/Debug/TriangulationCheck -inputMeshFile $pathToProject/TriangulatoinCheck/testCases/testInputMesh04 -outputDirectory $pathToProject/TriangulatoinCheck/
 
-./ffffff
 
 
-test case 1 will save, with corrections
-testcase 2 wont, there are big errors
-testcase 3 wont save, too small triangles
-testcase 4 wont save, too skew
+There are test cases in the folder $pathToProject/TriangulatoinCheck/testCases
+
+testcase1 is a mesh with minor problems, will save an output, with corrections
+testcase2 has major issues in formatting with missing triangles, and wrong labelling,
+	  it will not save an output.
+testcase3 has a very small triangle, will not save the output new file, but will save 
+	  the problematic triangle details.
+testcase4 has a very small skew triangle, will not save the output new file, but will save 
+	  the problematic triangle details.
+	  
 
 

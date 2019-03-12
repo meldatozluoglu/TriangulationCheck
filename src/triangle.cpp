@@ -15,24 +15,39 @@ triangle::~triangle(){
 }
 
 bool triangle::calculateAngles(double thresholdCosine, std::vector<double>& nodeXCoords, std::vector<double>& nodeYCoords){
+	/**
+	 *  Once the lengths of the sides are calculated, if any side is smaller 
+	 *  then the hard threshold of 1E-3 units (micrometers in current applications)
+	 *  the triangle will be assumed problematic, either too small too skew.  \n
+	 *  If all sides are in the acceptable range, then the cosine fo the angles will be 
+	 *  calculated. If any cosine is larger than the set threshold, then the angle is 
+	 *  smaller than the selected threshold (currently set to 20 degrees) and the 
+	 *  trangle is problematic. 
+	 */
 	double lengthThreshold = 1E-3;
 	double innerAngleCosines[3];
-
+	/** 
+	 * Within the code, the integer couple after distnaces gives the node ids: (dx01 is the
+	 * distance between nodes 0 and 1. Dot products are named for the corner that their cosine is 
+	 * associtated to. The cosines are calculated according to:
+	 * dotp(v,u) = norm(v) norm(u) cos(tetha).
+	 */
 	double dx01 = nodeXCoords[nodeIds[1]]-nodeXCoords[nodeIds[0]];
 	double dy01 = nodeYCoords[nodeIds[1]]-nodeYCoords[nodeIds[0]];
 	double dx02 = nodeXCoords[nodeIds[2]]-nodeXCoords[nodeIds[0]];
 	double dy02 = nodeYCoords[nodeIds[2]]-nodeYCoords[nodeIds[0]];
-	double dx12 = nodeXCoords[nodeIds[1]]-nodeXCoords[nodeIds[2]];
-	double dy12 = nodeYCoords[nodeIds[1]]-nodeYCoords[nodeIds[2]];
+	double dx12 = nodeXCoords[nodeIds[2]]-nodeXCoords[nodeIds[1]];
+	double dy12 = nodeYCoords[nodeIds[2]]-nodeYCoords[nodeIds[1]];
 
 	double norm01 = calculateNorm(dx01, dy01);
 	double norm02 = calculateNorm(dx02, dy02);
 	double norm12 = calculateNorm(dx12, dy12);
-
+	
 	double dotp0 =  dx01*dx02 + dy01*dy02;
 	double dotp1 =  dx12*(-1.0*dx01) + dy12*(-1.0*dy01);
 	double dotp2 =  (-1.0*dx12)*(-1.0*dx02) + (-1.0*dy12)*(-1.0*dy02);
-
+	
+	//If any length is below the threshold, the triangle is problematic, no need ot look into angles.
 	if (norm01 < lengthThreshold ||norm02 < lengthThreshold || norm12 < lengthThreshold ){
 		innerAngleCosines[0] = 1;
 		innerAngleCosines[1] = 1;
@@ -59,6 +74,14 @@ bool triangle::calculateAngles(double thresholdCosine, std::vector<double>& node
 }
 
 double triangle::calculateAreaAndRotation(std::vector<double>& nodeXCoords, std::vector<double>& nodeYCoords){
+	/**
+	 *  The area of the triangle from its three corners is calculated by the determinant: \n
+	 *  A = 1/2 |x0y1 + x1y2 + x2y0 - x1y0 - x2y1 - x0y2|
+	 *  The sign of the detminant, before the absolute value is taken gives the 
+	 *  rotation of its nodes. The node order will be updated if necessary, to 
+	 *  give a positive area in the existing order for all triangles.
+	 */
+	 
 	//calculate the area from the determinant:
 	// A = 1/2 [x0y1 + x1y2 + x2y0 - x1y0 - x2y1 - x0y2]
 	area += nodeXCoords[nodeIds[0]] * nodeYCoords[nodeIds[1]];
@@ -78,15 +101,17 @@ double triangle::calculateNorm (double dx, double dy){
 	return pow(dx*dx + dy*dy,0.5);
 }
 
-double triangle::dotP (double dx, double dy){
-	return pow(dx*dx + dy*dy,0.5);
-}
-
 double triangle::getArea(){
 	return area;
 }
 
 void triangle::rotateNodes(){
+	/**
+	 *  In the condition that nodes are in the wrong rotational order,
+	 *  swapping nodes 0 and 1 will suffice to inverse the rotation in a 
+	 *  three-node loop.
+	 */
+	
 	int tmpNode0Id = nodeIds[0];
 	nodeIds[0] = nodeIds[1];
 	nodeIds[1] = tmpNode0Id;
