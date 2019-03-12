@@ -28,8 +28,8 @@ protected:
 	double 	averageArea;
 	double 	thresholdAreaRatio;
 	bool	inputFileSpecified;
-	void 	checkHealthOfTriangles();
-	void	markTooSmallAreas();
+	bool 	checkHealthOfTriangles();
+	bool	markTooSmallAreas();
 	bool 	checkFileStatus(std::ifstream& file, std::string fileName);
 	void	markDuplicateNodes();
 	void	markUnusedNodes();

@@ -17,7 +17,11 @@ int	main(int argc, char * argv[]) {
 	if (errorInInput){
 		return errorInInput;
 	}
-	mesh01.healthCheckMesh();
+	errorInInput = mesh01.healthCheckMesh();
+	if (errorInInput){
+		std::cerr<<" exiting without save"<<std::endl;
+		return errorInInput;
+	}
 	mesh01.writeNewMesh();
 	return 0;
 }

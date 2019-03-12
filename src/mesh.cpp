@@ -68,9 +68,13 @@ void	mesh::writeNewMesh(){
 			std::cerr<<"could not open file: "<<name_saveFileMesh<<std::endl;
 			return;
 		}
-		saveFileMesh<<nNodes;
+		saveFileMesh<<nNodes - unusedNodeCounter;
 		saveFileMesh<<std::endl;
 		for (int i=0;i<nNodes; ++i){
+			if (find(unusedNodes.begin(), unusedNodes.end(),i) != unusedNodes.end()){
+				std::cout<<"skipping unused node"<<std::endl;
+				continue;
+			}
 			//id
 			saveFileMesh.precision(6);
 			saveFileMesh.width(10);
@@ -120,23 +124,33 @@ bool mesh::healthCheckMesh(){
 		updateTriangleDuplicateNodes();
 	}
 	markUnusedNodes();
-	checkHealthOfTriangles();
-	markTooSmallAreas();
+	bool thereAreProblematicTriangles = checkHealthOfTriangles();
+	if (!thereAreProblematicTriangles){
+		std::cout<<"All triangles are healthy for skewness"<<std::endl;
+	}
+	thereAreProblematicTriangles = markTooSmallAreas();
+	if (!thereAreProblematicTriangles){
+		std::cout<<"All triangles are sufficiently large for area, current threshold: "<<thresholdAreaRatio*100<<" percent of average"<<std::endl;
+	}
 	return errorInInput;
 }
 
-void mesh::markTooSmallAreas(){
+bool mesh::markTooSmallAreas(){
+	bool thereAreProblematicTriangles = false;
 	for (triangle* tri_ptr : triangles){
 		double currArea = tri_ptr->getArea();
 		double ratio = currArea/averageArea;
 		if (ratio < thresholdAreaRatio){
 			unhealthyTriangles.push_back(tri_ptr->index);
 			std::cout<<"Triangle: "<<tri_ptr->index<<" too small"<<std::endl;
+			thereAreProblematicTriangles = true;
 		}
 	}
+	return thereAreProblematicTriangles;
 }
 
-void mesh::checkHealthOfTriangles(){
+bool mesh::checkHealthOfTriangles(){
+	bool thereAreProblematicTriangles = false;
 	for (triangle* tri_ptr : triangles){
 		double currArea = tri_ptr->calculateAreaAndRotation(nodeXCoords,nodeYCoords);
 		averageArea+= currArea;
@@ -144,12 +158,14 @@ void mesh::checkHealthOfTriangles(){
 		if (triagleAnglesTooSmall){
 			std::cout<<"Triangle: "<<tri_ptr->index<<" too skew"<<std::endl;
 			unhealthyTriangles.push_back(tri_ptr->index);
+			thereAreProblematicTriangles = true;
 		}
 
 	}
 	if (nTriangles>0){
 		averageArea /= nTriangles;
 	}
+	return thereAreProblematicTriangles;
 }
 
 void mesh::updateTriangleDuplicateNodes(){
@@ -333,6 +349,10 @@ bool	mesh::readNodes(std::ifstream& inputMeshFile){
 		nodeBorderInfo.push_back(isborder); //This is not useful for us but we keep track in case we need to write a new mesh later on
 		readNodeCounter++;
 	}
+	if (readNodeCounter<nNodes){
+		std::cerr<<" current read node count: "<<readNodeCounter<<" desired node count"<<nNodes<<std::endl;
+		errorInFile  = true;
+	}
 	return errorInFile;
 }
 
@@ -372,9 +392,18 @@ bool	mesh::readTriangles(std::ifstream& inputMeshFile){
 			std::cerr<<"Format error in input mesh, expected ids for triangle corners "<<readTriCounter<<" , current line: "<<currline<<std::endl;
 			break;
 		}
+		if (node0>nNodes || node1>nNodes || node2>nNodes  ){
+			errorInFile = true;
+			std::cerr<<"Format error in input mesh, triangle corners refer to nodes above given count "<<node0<<" "<<node1<<" "<<node2<<std::endl;
+			break;
+		}
 		triangle* tri_p = new triangle(node0, node1, node2,readTriCounter);
 		triangles.push_back(tri_p);
 		readTriCounter++;
+	}
+	if (readTriCounter<nTriangles){
+		std::cerr<<" current read triangle count: "<<readTriCounter<<" desired triangle count"<<nTriangles<<std::endl;
+		errorInFile  = true;
 	}
 	return errorInFile;
 }
