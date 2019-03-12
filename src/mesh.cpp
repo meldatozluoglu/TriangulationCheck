@@ -1,8 +1,4 @@
 /*
- * mesh.cpp
- *
- *  Created on: 12 Mar 2019
- *      Author: melda
  */
 #include "mesh.h"
 #include "triangle.h"
@@ -36,6 +32,7 @@ mesh::~mesh(){
 	}
 }
 
+
 bool mesh::checkFileStatus(std::ifstream& file, std::string fileName){
 	if (!file.is_open()) {
 		std::cout<<"Cannot open parameter input file, "<<fileName<<std::endl;
@@ -46,6 +43,316 @@ bool mesh::checkFileStatus(std::ifstream& file, std::string fileName){
 		return true; //there is error;
 	}
 	return false;
+}
+
+bool mesh::checkHealthOfTriangles(){
+	bool thereAreProblematicTriangles = false;
+	for (triangle* tri_ptr : triangles){
+		double currArea = tri_ptr->calculateAreaAndRotation(nodeXCoords,nodeYCoords);
+		averageArea+= currArea;
+		bool triagleAnglesTooSmall = tri_ptr->calculateAngles(thresholdCosine, nodeXCoords,nodeYCoords);
+		if (triagleAnglesTooSmall){
+			std::cout<<"Triangle: "<<tri_ptr->index<<" too skew"<<std::endl;
+			unhealthyTriangles.push_back(tri_ptr->index);
+			thereAreProblematicTriangles = true;
+		}
+
+	}
+	if (nTriangles>0){
+		averageArea /= nTriangles;
+	}
+	return thereAreProblematicTriangles;
+}
+
+bool mesh::healthCheckMesh(){
+	bool errorInInput = false;
+	errorInInput = readInputMesh();
+	if (errorInInput){
+		return errorInInput;
+	}
+	markDuplicateNodes();
+	if (thereAreDuplicateNodes){
+		updateTriangleDuplicateNodes();
+	}
+	markUnusedNodes();
+	bool thereAreProblematicTriangles = checkHealthOfTriangles();
+	if (!thereAreProblematicTriangles){
+		std::cout<<"All triangles are healthy for skewness"<<std::endl;
+	}
+	thereAreProblematicTriangles = markTooSmallAreas();
+	if (!thereAreProblematicTriangles){
+		std::cout<<"All triangles are sufficiently large for area, current threshold: "<<thresholdAreaRatio*100<<" percent of average"<<std::endl;
+	}
+	return errorInInput;
+}
+
+void	mesh::markDuplicateNodes(){
+	bool nodeIsDuplicate[nNodes] = { false };
+	//classical iterators, I need
+	int indexOfXoriginal  = 0;
+	for (std::vector<double>::iterator it_xpos = nodeXCoords.begin(); it_xpos<nodeXCoords.end();it_xpos++ ){
+		bool thereAreDuplictes = true;
+		if(nodeIsDuplicate[indexOfXoriginal]){
+			//node is already duplicate, continue
+			continue;
+		}
+		int lowEndDistance = indexOfXoriginal+1;
+		while (thereAreDuplictes){
+			auto duplicateIterator = find(nodeXCoords.begin()+lowEndDistance, nodeXCoords.end(),(*it_xpos));
+			if (duplicateIterator != nodeXCoords.end()){
+				//there is a duplicate x coord, is the y coordinate duplicate?
+				int indexOfXduplicate = std::distance(nodeXCoords.begin(), duplicateIterator);
+				lowEndDistance = indexOfXduplicate+1;
+				if (nodeYCoords[indexOfXduplicate] == nodeYCoords[indexOfXoriginal]){
+					//node is duplicate
+					std::cout<<"there is x and y duplicate at node pair: "<<indexOfXoriginal<<" "<<indexOfXduplicate<<std::endl;
+					nodeIsDuplicate[indexOfXduplicate] = true;
+					mapOfDuplicateNodes[indexOfXduplicate] = indexOfXoriginal;
+					thereAreDuplicateNodes = true;
+				}
+			}
+			else{
+				thereAreDuplictes=false;
+			}
+		}
+		indexOfXoriginal++;
+	}
+}
+
+bool	mesh::readExecutableInputs(int argc, char * argv[]){
+	int inputArgumentIndex = 1;
+	bool errorInInput = false;
+	while(inputArgumentIndex<argc){
+		const char *inptype = argv[inputArgumentIndex];
+		if (std::string(inptype) == "-inputMeshFile"){
+			errorInInput  = readInputFileName(inputArgumentIndex, argc, argv);
+		}
+		else if (std::string(inptype) == "-outputDirectory"){
+			errorInInput  = readOutputDirectory(inputArgumentIndex, argc, argv);
+		}
+		else {
+			std::cerr<<"Please enter a valid option key: {-inputMeshFile, -outputDirectory}, current string: "<<inptype<<std::endl;
+			return true;//there is error in executable input
+		}
+		inputArgumentIndex++;
+		if (errorInInput ){
+			return errorInInput ;
+		}
+	}
+	if (!inputFileSpecified){
+		std::cout<<"Please enter the input mesh, a test cases can be found under /TriangulationCheck/testCases/ "<<std::endl;
+		std::cout<<"   format is: -inputMeshFile $pathToProject/TriangulationCheck/testCases/testInputMesh01"<<std::endl;
+		return true;//there is error in executable input
+	}
+	return errorInInput;
+}
+
+bool mesh::markTooSmallAreas(){
+	bool thereAreProblematicTriangles = false;
+	for (triangle* tri_ptr : triangles){
+		double currArea = tri_ptr->getArea();
+		double ratio = currArea/averageArea;
+		if (ratio < thresholdAreaRatio){
+			unhealthyTriangles.push_back(tri_ptr->index);
+			std::cout<<"Triangle: "<<tri_ptr->index<<" too small"<<std::endl;
+			thereAreProblematicTriangles = true;
+		}
+	}
+	return thereAreProblematicTriangles;
+}
+
+void mesh::markUnusedNodes(){
+	int nodeId = 0;
+	while(nodeId<nNodes){
+		bool foundNode = false;
+		for (triangle* tri_ptr : triangles){
+			for (auto const &triangleNodeId : tri_ptr->nodeIds){
+				if (triangleNodeId == nodeId){
+					foundNode = true;
+					break;
+				}
+			}
+			if (foundNode){
+				break;
+			}
+		}
+		if (!foundNode){
+			unusedNodeCounter++;
+			unusedNodes.push_back(nodeId);
+			std::cout<<"Detected unused node: "<<nodeId<<std::endl;
+		}
+		nodeId++;
+	}
+}
+
+bool	mesh::readInputMesh(){
+	/**
+	 *  This function will read all available model inputs from the file ModelInputObject#parameterFileName. \n
+	 *  It will start by opening the model input file, after each attempt to open a file, there will be a health check to ensure the file
+	 *  could be opened. In case there are issues with the file (most common one being the file is not opened due to a path error),
+	 *  the function will throw an error with corresponding explanatory error message, and quit the simulation.
+	 */
+
+	//Open the input file
+	bool errorInFile = false;
+	std::ifstream inputMeshFile;
+	inputMeshFile.open(inputMeshFileName, std::ifstream::in);
+	errorInFile = checkFileStatus(inputMeshFile,inputMeshFileName);
+	if (errorInFile){
+		return errorInFile;
+	}
+	//read nodes
+	errorInFile = readNodes(inputMeshFile);
+	if (errorInFile){
+		return errorInFile;
+	}
+	//read triangles
+	errorInFile = readTriangles(inputMeshFile);
+	if (errorInFile){
+		return errorInFile;
+	}
+	return errorInFile;
+}
+
+bool mesh::readInputFileName(int& inputArgumentIndex, int argc, char **argv){
+	inputArgumentIndex++;
+	if (inputArgumentIndex >= argc){
+		std::cerr<<" input the save directory, contents of which will be displayed"<<std::endl;
+		return true;
+	}
+	inputMeshFileName = argv[inputArgumentIndex];
+	inputFileSpecified = true;
+	return false;
+}
+
+bool	mesh::readNodes(std::ifstream& inputMeshFile){
+	bool errorInFile = false;
+	std::string currline;
+	std::getline(inputMeshFile,currline);
+	while (currline.empty()){
+		//skipping empty lines
+		getline(inputMeshFile,currline);
+		if (inputMeshFile.eof()){
+			errorInFile = true;
+			std::cerr<<"empty input file"<<std::endl;
+			return errorInFile;
+		}
+	}
+	std::istringstream currSStrem(currline);
+	currSStrem >> nNodes;      // try to read the node number
+	currSStrem >> std::ws;  // eat whitespace after number
+	if (currSStrem.fail() || !currSStrem.eof()) {
+		errorInFile = true;
+		std::cerr<<"Format error in input mesh, Node number is not correct, expected integer, current line: "<<currline<<std::endl;
+		return errorInFile;
+	}
+	int readNodeCounter =0;
+	while (!inputMeshFile.eof() && readNodeCounter<nNodes)
+	{
+		std::getline(inputMeshFile,currline);
+		if(currline.empty()){
+			continue;
+		}
+		std::istringstream iss(currline);
+		int id;
+		double x, y;
+		bool isborder;
+		if (!(iss >> id >> x >> y >> isborder)) {
+			errorInFile = true;
+			std::cerr<<"Format error in input mesh, expected coordinates for node number "<<readNodeCounter<<" , current line: "<<currline<<std::endl;
+			break;
+		}
+		nodeXCoords.push_back(x);
+		nodeYCoords.push_back(y);
+		nodeBorderInfo.push_back(isborder); //This is not useful for us but we keep track in case we need to write a new mesh later on
+		readNodeCounter++;
+	}
+	if (readNodeCounter<nNodes){
+		std::cerr<<" current read node count: "<<readNodeCounter<<" desired node count"<<nNodes<<std::endl;
+		errorInFile  = true;
+	}
+	return errorInFile;
+}
+
+bool mesh::readOutputDirectory(int& inputArgumentIndex, int argc, char **argv){
+	inputArgumentIndex++;
+	if (inputArgumentIndex >= argc){
+		std::cerr<<" input the save directory"<<std::endl;
+		return false;
+	}
+	const char* inpstring = argv[inputArgumentIndex];
+	//This will set the save directory, but will not change the safe file boolean.
+	//If your model input file states no saving, then the error and output files
+	//will be directed into this directory, but the frame saving will not be toggled
+	outputDirectory= std::string(inpstring);
+	return false;//no errors
+}
+
+bool	mesh::readTriangles(std::ifstream& inputMeshFile){
+	bool errorInFile = false;
+	std::string currline;
+	std::getline(inputMeshFile,currline);
+	while (currline.empty()){
+		//skipping empty lines
+		getline(inputMeshFile,currline);
+		if (inputMeshFile.eof()){
+			errorInFile = true;
+			std::cerr<<"no triangle info on input file"<<std::endl;
+			return errorInFile;
+		}
+	}
+	std::istringstream currSStrem(currline);
+	currSStrem >> nTriangles;      // try to read the node number
+	currSStrem >> std::ws;  // eat whitespace after number
+	if (currSStrem.fail() || !currSStrem.eof()) {
+		errorInFile = true;
+		std::cerr<<"Format error in input mesh, trienagle number is not correct, expected integer, current line: "<<currline<<std::endl;
+		return errorInFile;
+	}
+
+	int readTriCounter =0;
+	while (!inputMeshFile.eof() && readTriCounter<nTriangles)
+	{
+		std::getline(inputMeshFile,currline);
+		if(currline.empty()){
+			continue;
+		}
+		std::istringstream iss(currline);
+		int id, node0, node1, node2;
+		if (!(iss >> id >> node0 >> node1 >> node2)) {
+			errorInFile = true;
+			std::cerr<<"Format error in input mesh, expected ids for triangle corners "<<readTriCounter<<" , current line: "<<currline<<std::endl;
+			break;
+		}
+		if (node0>nNodes || node1>nNodes || node2>nNodes  ){
+			errorInFile = true;
+			std::cerr<<"Format error in input mesh, triangle corners refer to nodes above given count "<<node0<<" "<<node1<<" "<<node2<<std::endl;
+			break;
+		}
+		triangle* tri_p = new triangle(node0, node1, node2,readTriCounter);
+		triangles.push_back(tri_p);
+		readTriCounter++;
+	}
+	if (readTriCounter<nTriangles){
+		std::cerr<<" current read triangle count: "<<readTriCounter<<" desired triangle count"<<nTriangles<<std::endl;
+		errorInFile  = true;
+	}
+	return errorInFile;
+}
+
+
+
+void mesh::updateTriangleDuplicateNodes(){
+	for (triangle* tri_ptr : triangles){
+		for (auto &currNodeId : tri_ptr->nodeIds){
+			std::map<int,int>::iterator duplicateNodeit;
+			duplicateNodeit = mapOfDuplicateNodes.find(currNodeId);
+			if (  duplicateNodeit != mapOfDuplicateNodes.end() ) {
+				// the duplicate is this node, swap it with original:
+				currNodeId = duplicateNodeit->second;
+			}
+		}
+	}
 }
 
 void	mesh::writeNewMesh(){
@@ -110,314 +417,4 @@ void	mesh::writeNewMesh(){
 		}
 		std::cout<<"output file generated at: "<<name_saveFileMesh<<std::endl;
 	}
-}
-
-
-bool mesh::healthCheckMesh(){
-	bool errorInInput = false;
-	errorInInput = readInputMesh();
-	if (errorInInput){
-		return errorInInput;
-	}
-	markDuplicateNodes();
-	if (thereAreDuplicateNodes){
-		updateTriangleDuplicateNodes();
-	}
-	markUnusedNodes();
-	bool thereAreProblematicTriangles = checkHealthOfTriangles();
-	if (!thereAreProblematicTriangles){
-		std::cout<<"All triangles are healthy for skewness"<<std::endl;
-	}
-	thereAreProblematicTriangles = markTooSmallAreas();
-	if (!thereAreProblematicTriangles){
-		std::cout<<"All triangles are sufficiently large for area, current threshold: "<<thresholdAreaRatio*100<<" percent of average"<<std::endl;
-	}
-	return errorInInput;
-}
-
-bool mesh::markTooSmallAreas(){
-	bool thereAreProblematicTriangles = false;
-	for (triangle* tri_ptr : triangles){
-		double currArea = tri_ptr->getArea();
-		double ratio = currArea/averageArea;
-		if (ratio < thresholdAreaRatio){
-			unhealthyTriangles.push_back(tri_ptr->index);
-			std::cout<<"Triangle: "<<tri_ptr->index<<" too small"<<std::endl;
-			thereAreProblematicTriangles = true;
-		}
-	}
-	return thereAreProblematicTriangles;
-}
-
-bool mesh::checkHealthOfTriangles(){
-	bool thereAreProblematicTriangles = false;
-	for (triangle* tri_ptr : triangles){
-		double currArea = tri_ptr->calculateAreaAndRotation(nodeXCoords,nodeYCoords);
-		averageArea+= currArea;
-		bool triagleAnglesTooSmall = tri_ptr->calculateAngles(thresholdCosine, nodeXCoords,nodeYCoords);
-		if (triagleAnglesTooSmall){
-			std::cout<<"Triangle: "<<tri_ptr->index<<" too skew"<<std::endl;
-			unhealthyTriangles.push_back(tri_ptr->index);
-			thereAreProblematicTriangles = true;
-		}
-
-	}
-	if (nTriangles>0){
-		averageArea /= nTriangles;
-	}
-	return thereAreProblematicTriangles;
-}
-
-void mesh::updateTriangleDuplicateNodes(){
-	for (triangle* tri_ptr : triangles){
-		for (auto &currNodeId : tri_ptr->nodeIds){
-			std::map<int,int>::iterator duplicateNodeit;
-			duplicateNodeit = mapOfDuplicateNodes.find(currNodeId);
-			if (  duplicateNodeit != mapOfDuplicateNodes.end() ) {
-				// the duplicate is this node, swap it with original:
-				currNodeId = duplicateNodeit->second;
-			}
-		}
-	}
-}
-
-void mesh::markUnusedNodes(){
-	int nodeId = 0;
-	while(nodeId<nNodes){
-		bool foundNode = false;
-		for (triangle* tri_ptr : triangles){
-			for (auto const &triangleNodeId : tri_ptr->nodeIds){
-				if (triangleNodeId == nodeId){
-					foundNode = true;
-					break;
-				}
-			}
-			if (foundNode){
-				break;
-			}
-		}
-		if (!foundNode){
-			unusedNodeCounter++;
-			unusedNodes.push_back(nodeId);
-			std::cout<<"Detected unused node: "<<nodeId<<std::endl;
-		}
-		nodeId++;
-	}
-}
-
-void	mesh::markDuplicateNodes(){
-	bool nodeIsDuplicate[nNodes] = { false };
-	//classical iterators, I need
-	int indexOfXoriginal  = 0;
-	for (std::vector<double>::iterator it_xpos = nodeXCoords.begin(); it_xpos<nodeXCoords.end();it_xpos++ ){
-		bool thereAreDuplictes = true;
-		if(nodeIsDuplicate[indexOfXoriginal]){
-			//node is already duplicate, continue
-			continue;
-		}
-		int lowEndDistance = indexOfXoriginal+1;
-		while (thereAreDuplictes){
-			auto duplicateIterator = find(nodeXCoords.begin()+lowEndDistance, nodeXCoords.end(),(*it_xpos));
-			if (duplicateIterator != nodeXCoords.end()){
-				//there is a duplicate x coord, is the y coordinate duplicate?
-				int indexOfXduplicate = std::distance(nodeXCoords.begin(), duplicateIterator);
-				lowEndDistance = indexOfXduplicate+1;
-				if (nodeYCoords[indexOfXduplicate] == nodeYCoords[indexOfXoriginal]){
-					//node is duplicate
-					std::cout<<"there is x and y duplicate at node pair: "<<indexOfXoriginal<<" "<<indexOfXduplicate<<std::endl;
-					nodeIsDuplicate[indexOfXduplicate] = true;
-					mapOfDuplicateNodes[indexOfXduplicate] = indexOfXoriginal;
-					thereAreDuplicateNodes = true;
-				}
-			}
-			else{
-				thereAreDuplictes=false;
-			}
-		}
-		indexOfXoriginal++;
-	}
-}
-
-bool	mesh::readExecutableInputs(int argc, char * argv[]){
-	int inputArgumentIndex = 1;
-	bool errorInInput = false;
-	while(inputArgumentIndex<argc){
-		const char *inptype = argv[inputArgumentIndex];
-		if (std::string(inptype) == "-inputMeshFile"){
-			errorInInput  = readInputFileName(inputArgumentIndex, argc, argv);
-		}
-		else if (std::string(inptype) == "-outputDirectory"){
-			errorInInput  = readOutputDirectory(inputArgumentIndex, argc, argv);
-		}
-		else {
-			std::cerr<<"Please enter a valid option key: {-inputMeshFile, -outputDirectory}, current string: "<<inptype<<std::endl;
-			return true;//there is error in executable input
-		}
-		inputArgumentIndex++;
-		if (errorInInput ){
-			return errorInInput ;
-		}
-	}
-	if (!inputFileSpecified){
-		std::cout<<"Please enter the input mesh, a test cases can be found under /TriangulationCheck/testCases/ "<<std::endl;
-		std::cout<<"   format is: -inputMeshFile $pathToProject/TriangulationCheck/testCases/testInputMesh01"<<std::endl;
-		return true;//there is error in executable input
-	}
-	return errorInInput;
-}
-
-bool mesh::readInputFileName(int& inputArgumentIndex, int argc, char **argv){
-	inputArgumentIndex++;
-	if (inputArgumentIndex >= argc){
-		std::cerr<<" input the save directory, contents of which will be displayed"<<std::endl;
-		return true;
-	}
-	inputMeshFileName = argv[inputArgumentIndex];
-	inputFileSpecified = true;
-	return false;
-}
-
-
-bool	mesh::readInputMesh(){
-	/**
-	 *  This function will read all available model inputs from the file ModelInputObject#parameterFileName. \n
-	 *  It will start by opening the model input file, after each attempt to open a file, there will be a health check to ensure the file
-	 *  could be opened. In case there are issues with the file (most common one being the file is not opened due to a path error),
-	 *  the function will throw an error with corresponding explanatory error message, and quit the simulation.
-	 */
-
-	//Open the input file
-	bool errorInFile = false;
-	std::ifstream inputMeshFile;
-	inputMeshFile.open(inputMeshFileName, std::ifstream::in);
-	errorInFile = checkFileStatus(inputMeshFile,inputMeshFileName);
-	if (errorInFile){
-		return errorInFile;
-	}
-	//read nodes
-	errorInFile = readNodes(inputMeshFile);
-	if (errorInFile){
-		return errorInFile;
-	}
-	//read triangles
-	errorInFile = readTriangles(inputMeshFile);
-	if (errorInFile){
-		return errorInFile;
-	}
-	return errorInFile;
-}
-
-bool	mesh::readNodes(std::ifstream& inputMeshFile){
-	bool errorInFile = false;
-	std::string currline;
-	std::getline(inputMeshFile,currline);
-	while (currline.empty()){
-		//skipping empty lines
-		getline(inputMeshFile,currline);
-		if (inputMeshFile.eof()){
-			errorInFile = true;
-			std::cerr<<"empty input file"<<std::endl;
-			return errorInFile;
-		}
-	}
-	std::istringstream currSStrem(currline);
-	currSStrem >> nNodes;      // try to read the node number
-	currSStrem >> std::ws;  // eat whitespace after number
-	if (currSStrem.fail() || !currSStrem.eof()) {
-		errorInFile = true;
-		std::cerr<<"Format error in input mesh, Node number is not correct, expected integer, current line: "<<currline<<std::endl;
-		return errorInFile;
-	}
-	int readNodeCounter =0;
-	while (!inputMeshFile.eof() && readNodeCounter<nNodes)
-	{
-		std::getline(inputMeshFile,currline);
-		if(currline.empty()){
-			continue;
-		}
-		std::istringstream iss(currline);
-		int id;
-		double x, y;
-		bool isborder;
-		if (!(iss >> id >> x >> y >> isborder)) {
-			errorInFile = true;
-			std::cerr<<"Format error in input mesh, expected coordinates for node number "<<readNodeCounter<<" , current line: "<<currline<<std::endl;
-			break;
-		}
-		nodeXCoords.push_back(x);
-		nodeYCoords.push_back(y);
-		nodeBorderInfo.push_back(isborder); //This is not useful for us but we keep track in case we need to write a new mesh later on
-		readNodeCounter++;
-	}
-	if (readNodeCounter<nNodes){
-		std::cerr<<" current read node count: "<<readNodeCounter<<" desired node count"<<nNodes<<std::endl;
-		errorInFile  = true;
-	}
-	return errorInFile;
-}
-
-bool	mesh::readTriangles(std::ifstream& inputMeshFile){
-	bool errorInFile = false;
-	std::string currline;
-	std::getline(inputMeshFile,currline);
-	while (currline.empty()){
-		//skipping empty lines
-		getline(inputMeshFile,currline);
-		if (inputMeshFile.eof()){
-			errorInFile = true;
-			std::cerr<<"no triangle info on input file"<<std::endl;
-			return errorInFile;
-		}
-	}
-	std::istringstream currSStrem(currline);
-	currSStrem >> nTriangles;      // try to read the node number
-	currSStrem >> std::ws;  // eat whitespace after number
-	if (currSStrem.fail() || !currSStrem.eof()) {
-		errorInFile = true;
-		std::cerr<<"Format error in input mesh, trienagle number is not correct, expected integer, current line: "<<currline<<std::endl;
-		return errorInFile;
-	}
-
-	int readTriCounter =0;
-	while (!inputMeshFile.eof() && readTriCounter<nTriangles)
-	{
-		std::getline(inputMeshFile,currline);
-		if(currline.empty()){
-			continue;
-		}
-		std::istringstream iss(currline);
-		int id, node0, node1, node2;
-		if (!(iss >> id >> node0 >> node1 >> node2)) {
-			errorInFile = true;
-			std::cerr<<"Format error in input mesh, expected ids for triangle corners "<<readTriCounter<<" , current line: "<<currline<<std::endl;
-			break;
-		}
-		if (node0>nNodes || node1>nNodes || node2>nNodes  ){
-			errorInFile = true;
-			std::cerr<<"Format error in input mesh, triangle corners refer to nodes above given count "<<node0<<" "<<node1<<" "<<node2<<std::endl;
-			break;
-		}
-		triangle* tri_p = new triangle(node0, node1, node2,readTriCounter);
-		triangles.push_back(tri_p);
-		readTriCounter++;
-	}
-	if (readTriCounter<nTriangles){
-		std::cerr<<" current read triangle count: "<<readTriCounter<<" desired triangle count"<<nTriangles<<std::endl;
-		errorInFile  = true;
-	}
-	return errorInFile;
-}
-
-bool mesh::readOutputDirectory(int& inputArgumentIndex, int argc, char **argv){
-	inputArgumentIndex++;
-	if (inputArgumentIndex >= argc){
-		std::cerr<<" input the save directory"<<std::endl;
-		return false;
-	}
-	const char* inpstring = argv[inputArgumentIndex];
-	//This will set the save directory, but will not change the safe file boolean.
-	//If your model input file states no saving, then the error and output files
-	//will be directed into this directory, but the frame saving will not be toggled
-	outputDirectory= std::string(inpstring);
-	return false;//no errors
 }

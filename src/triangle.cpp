@@ -14,14 +14,6 @@ triangle::~triangle(){
 
 }
 
-double calculateNorm (double dx, double dy){
-	return pow(dx*dx + dy*dy,0.5);
-}
-
-double dotP (double dx, double dy){
-	return pow(dx*dx + dy*dy,0.5);
-}
-
 bool triangle::calculateAngles(double thresholdCosine, std::vector<double>& nodeXCoords, std::vector<double>& nodeYCoords){
 	double lengthThreshold = 1E-3;
 	double innerAngleCosines[3];
@@ -80,6 +72,14 @@ double triangle::calculateAreaAndRotation(std::vector<double>& nodeXCoords, std:
 		rotateNodes();
 	}
 	return area;
+}
+
+double triangle::calculateNorm (double dx, double dy){
+	return pow(dx*dx + dy*dy,0.5);
+}
+
+double triangle::dotP (double dx, double dy){
+	return pow(dx*dx + dy*dy,0.5);
 }
 
 double triangle::getArea(){
