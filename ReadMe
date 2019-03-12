@@ -1,0 +1,13 @@
+makefile is available under Debug folder, this is not a release product.
+
+the formata to call the function is:
+
+./ffffff
+
+
+test case 1 will save, with corrections
+testcase 2 wont, there are big errors
+testcase 3 wont save, too small triangles
+testcase 4 wont save, too skew
+
+
