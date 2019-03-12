@@ -10,9 +10,9 @@ There are test cases in the folder $pathToProject/TriangulatoinCheck/testCases
 testcase1 is a mesh with minor problems, will save an output, with corrections
 testcase2 has major issues in formatting with missing triangles, and wrong labelling,
 	  it will not save an output.
-testcase3 has a very small triangle, will not save the output new file, but will save 
+testcase3 has a very small triangle, will not save the output new file, but will report 
 	  the problematic triangle details.
-testcase4 has a very small skew triangle, will not save the output new file, but will save 
+testcase4 has a very small skew triangle, will not save the output new file, but will report 
 	  the problematic triangle details.
 	  
 
